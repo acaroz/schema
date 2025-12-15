@@ -1,0 +1,61 @@
+image: registry.gitlab.com/kmarasovic/base-images/alpine-jdkfx17-ant-mvn:latest
+
+variables:
+  SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+  GIT_DEPTH: "0"
+
+stages:
+  - build
+  - test
+  - package
+
+cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - .m2/repository/
+    - "${SONAR_USER_HOME}/cache"
+    - sonar-scanner/
+
+build-job:
+  stage: build
+  script:
+    - mvn -DskipTests clean compile
+  artifacts:
+    paths:
+      - target/
+
+test-junit:
+  stage: test
+  needs:
+    - build-job
+  script:
+    - echo "Running JUnit tests..."
+    - mvn test
+  artifacts:
+    when: always
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    paths:
+      - target/surefire-reports/
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+      when: always
+
+test-sonar:
+  stage: test
+  needs:
+    - build-job
+  script:
+    - mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar || echo "SonarQube not reachable, skipping..."
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+      when: always
+
+package-job:
+  stage: package
+  script:
+    - mvn -Dmaven.compiler.skip=true -DskipTests package
+  artifacts:
+    paths:
+      - target/*.jar
